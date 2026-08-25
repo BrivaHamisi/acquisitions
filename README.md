@@ -128,13 +128,15 @@ src/
 
 ### Authentication
 
-| Method | Path | Description | Status |
-|---|---|---|---|
-| POST | `/api/auth/sign-up` | Register a new user | Implemented |
-| POST | `/api/auth/sign-in` | Sign in | Stub |
-| POST | `/api/auth/sign-out` | Sign out | Stub |
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/auth/sign-up` | Register a new user |
+| POST | `/api/auth/sign-in` | Sign in with email and password |
+| POST | `/api/auth/sign-out` | Sign out and clear token |
 
 #### POST /api/auth/sign-up
+
+Register a new user account.
 
 **Request body:**
 ```json
@@ -163,7 +165,49 @@ src/
 - `400` — Validation failed
 - `409` — Email already exists
 
-## Data Flow — Signup Request
+#### POST /api/auth/sign-in
+
+Authenticate with email and password. Returns a JWT token in an httpOnly cookie.
+
+**Request body:**
+```json
+{
+  "email": "string (valid email)",
+  "password": "string (min 1 char)"
+}
+```
+
+**Response (200):**
+```json
+{
+  "message": "User signed in successfully",
+  "user": {
+    "id": 1,
+    "name": "John Doe",
+    "email": "john@example.com",
+    "role": "user"
+  }
+}
+```
+
+**Error responses:**
+- `400` — Validation failed
+- `401` — Invalid email or password
+
+#### POST /api/auth/sign-out
+
+Clear the authentication token cookie.
+
+**Response (200):**
+```json
+{
+  "message": "User signed out successfully"
+}
+```
+
+## Data Flow
+
+### Signup
 
 ```
 POST /api/auth/sign-up
@@ -187,6 +231,47 @@ POST /api/auth/sign-up
 ├─ Set httpOnly cookie (token=<jwt>, 15min maxAge)
 │
 └─ 201 { message, user }
+```
+
+### Signin
+
+```
+POST /api/auth/sign-in
+│
+├─ Middleware (helmet → cors → json parser → cookie parser → morgan)
+│
+├─ Route match → auth.controller.js: signin
+│
+├─ Zod validation (signinSchema.safeParse)
+│  ├─ Fail → 400 { error: "Validation Failed" }
+│  └─ Pass ↓
+│
+├─ auth.service.js: authenticateUser
+│  ├─ SELECT from users WHERE email = ?
+│  ├─ Not found → 401 { error: "Invalid email or password" }
+│  ├─ bcrypt.compare(password, user.password)
+│  ├─ Mismatch → 401 { error: "Invalid email or password" }
+│  └─ Return user object
+│
+├─ jwt.sign({ id, email, role }, JWT_SECRET, { expiresIn: '15m' })
+│
+├─ Set httpOnly cookie (token=<jwt>, 15min maxAge)
+│
+└─ 200 { message, user }
+```
+
+### Signout
+
+```
+POST /api/auth/sign-out
+│
+├─ Middleware pipeline
+│
+├─ Route match → auth.controller.js: signout
+│
+├─ cookies.clear(res, 'token')
+│
+└─ 200 { message }
 ```
 
 ## Database Schema
